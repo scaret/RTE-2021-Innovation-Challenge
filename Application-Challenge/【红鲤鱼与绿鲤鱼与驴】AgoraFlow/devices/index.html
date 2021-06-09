@@ -101,6 +101,7 @@
         }
         data.deviceName = deviceName;
         const topics = [
+            `/flow/1/starting`,
             `/agora/upstream/${deviceName}`,
             `/agora/downstream/${deviceName}`,
         ];
@@ -136,13 +137,11 @@
         let msgCnt = 0;
         let msgCntMax = 1;
         let reqs = [];
+        let flowStartTime = null;
         async function handleMessageUpstream(topic, obj){
             data.streamOptions = obj.streamOptions;
             data.videoPlayer = obj.videoPlayer;
 
-            for (var i = 0; i < data.upstreams.length; i++){
-                data.upstreams.pop();
-            }
             for (var j = 0; j< obj.upstreamOptions.length; j++){
                 data.upstreams.push({
                     appId: obj.upstreamOptions[j].appId,
@@ -216,26 +215,45 @@
             try{
                 obj = JSON.parse(message.toString());
             }catch(e){
-                console.error("message:", message.toString())
+                console.error("Cannot parse message:", message.toString())
             }
-            console.error("message", obj)
+            console.error("message", topic, obj)
             if (reqs.indexOf(obj.requestId) > -1){
                 console.log("收到重复的message", obj);
                 return;
             }else{
                 reqs.push(obj.requestId)
-                if (obj.type === "upstream"){
+                if (obj.type === "flowstarting"){
+                    if (!flowStartTime){
+                        flowStartTime = obj.requestId;
+                    }else if (flowStartTime === obj.requestId){
+                        // console.log("重复的流消息");
+                    }else{
+                        // 流的配置更新了
+                        if (urlParams.get('reload') === "yes"){
+                            window.location.reload();
+                        }else{
+                            console.warn("流的配置更新了。清除已有配置");
+                            for (var i = 0; i < data.upstreams.length; i++){
+                                data.upstreams.pop();
+                            }
+                        }
+                    }
+                }
+                else if (obj.type === "upstream"){
                     msgCnt++;
                     handleMessageUpstream(topic, obj);
                 }else if (obj.type === "downstream"){
                     handleMessageDownstream(topic, obj);
                 }
             }
-
         });
         client.on("close", function(){
             console.error("client close");
         })
+        setInterval(()=>{
+            client.publish('/heartbeat/' + deviceName);
+        }, 5000)
     }
     main()
 </script>
